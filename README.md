@@ -11,7 +11,9 @@ This is a really simple application, all configuration is done in [src/main.rs] 
 1. Have [Rust](https://www.rust-lang.org/tools/install) and Cargo installed.
 2. `cargo run` while inside the project tree.
 
-If you prefer, you can also build the binary (with `cargo build --release`) and run it directly. It will be available under `target/release/` directory.
+If you prefer to build it to a executable, you can use `cargo build` and then run the executable in `target/release/udpinger`.
+
+To omit debug message (and achieve higher performance), you can append `--release` flag to both commands.
 
 ## License
 
