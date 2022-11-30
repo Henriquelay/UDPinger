@@ -23,7 +23,7 @@ while True:
    message, address = serverSocket.recvfrom(messageSize)
    message = message.upper()
    # print('Receive: ')
-   # print(str(message))
+   print(str(message))
    seq = int.from_bytes(message[0:5], byteorder='little')
    print('Seq: ' + str(seq))
    message = bytearray(message)

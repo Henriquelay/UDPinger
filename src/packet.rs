@@ -130,13 +130,17 @@ impl From<Packet> for Vec<u8> {
     }
 }
 
+const NAME: &str = "HenriqueCoutinhoLayber";
+const NAME_LEN: usize = 22;
+
 /// Return a valid random message
-pub fn rand_message(_rng: &mut impl Rng, seq: usize) -> [u8; MSG_BYTES] {
-    let mut slice = [(65 + seq) as u8; MSG_BYTES];
-    for (i, num) in slice.iter_mut().enumerate() {
-        *num += i as u8;
-    }
-    slice
+pub fn rand_message(_rng: &mut impl Rng, _seq: usize) -> [u8; MSG_BYTES] {
+    let bytes = &NAME.as_bytes()[0..22];
+    let mut message = [0; MSG_BYTES];
+    message[..bytes.len()].copy_from_slice(bytes);
+    // fill the rest with 0
+    message[bytes.len()..].copy_from_slice(&[0; MSG_BYTES - NAME_LEN]);
+    message
 }
 
 #[cfg(test)]

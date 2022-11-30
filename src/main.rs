@@ -17,7 +17,8 @@ use crate::packet::PKT_SIZE;
 
 const HOST_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const HOST_PORT: u16 = 30001;
-const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
+// const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
+const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::new(168, 227, 188, 22);
 const CLIENT_PORT: u16 = 30000;
 
 const TIME_BETEEN_PINGS: Duration = Duration::from_millis(500);
@@ -28,7 +29,7 @@ fn main() {
     let host_url: SocketAddrV4 = SocketAddrV4::new(HOST_ADDR, HOST_PORT);
     let client_url: SocketAddrV4 = SocketAddrV4::new(CLIENT_ADDR, CLIENT_PORT);
     let socket = UdpSocket::bind(host_url).expect("Error binding socket");
-    socket.connect(client_url).expect("Error connecting socket");
+    // socket.connect(client_url).expect("Error connecting socket");
 
     // socket
     //     .set_read_timeout(Some(TIME_UNTIL_DROPPED))
@@ -45,5 +46,5 @@ fn main() {
 
     // print response and stats
     println!("PING {} ({}): {} data bytes", HOST_ADDR, host_url, PKT_SIZE);
-    analyze(&mut pkts, &socket, client_url.to_string()).expect("Error analyzing packets");
+    analyze(&mut pkts, &socket, client_url).expect("Error analyzing packets");
 }

@@ -1,12 +1,12 @@
 use std::{
     convert::TryFrom,
-    net::UdpSocket,
+    net::{SocketAddrV4, UdpSocket},
     thread::{self},
     time::{Duration, Instant},
 };
 
 use crate::{
-    packet::{Packet, Type, PKT_SIZE, SEQ_BYTES},
+    packet::{Packet, Type, MSG_BYTES, PKT_SIZE, SEQ_BYTES},
     util::seq_to_u64,
     EXTRA_TIME_TO_WAIT, MAX_PINGS, TIME_BETEEN_PINGS,
 };
@@ -25,8 +25,19 @@ fn fetch(pkt: Packet, socket: &UdpSocket) -> Result<Instant, String> {
         // println!("Chars: \"{}\"", String::from_utf8_lossy(&pkt.message));
     }
 
+    // dbg!(ping_msg.bytes());
+    // dbg!(ping_msg.bytes().count());
+
     let start = Instant::now();
-    socket.send(&ping_msg).map_err(|_| "Error sending ping")?;
+    socket
+        .send(&ping_msg[0..MSG_BYTES])
+        .map_err(|_| "Error sending ping")?;
+
+    #[cfg(debug_assertions)]
+    println!(
+        "Packet {} sent",
+        u64::from_le_bytes([pkt.seq[0], pkt.seq[1], pkt.seq[2], pkt.seq[3], pkt.seq[4], 0, 0, 0]),
+    );
 
     Ok(start)
 }
@@ -38,7 +49,12 @@ fn listen(socket: &UdpSocket, time_until_drop: Duration) -> Result<(Packet, usiz
         .set_read_timeout(Some(time_until_drop))
         .expect("Error setting read timeout");
 
-    let res_size = socket.recv(&mut buf).map_err(|_| "Packet dropped")?;
+    dbg!("Antes de ouvir");
+    let res_size = socket.recv(&mut buf).map_err(|e| {
+        dbg!(e);
+        "Recv failed"
+    })?;
+    dbg!("Depois de ouvir");
 
     // print response
     #[cfg(debug_assertions)]
@@ -53,20 +69,13 @@ fn listen(socket: &UdpSocket, time_until_drop: Duration) -> Result<(Packet, usiz
     Ok((pkt, res_size))
 }
 
-fn validate_pong(got: &Packet, expected: &Packet) -> bool {
-    got.seq == expected.seq
-        && got.message == expected.message
-        && got.timestamp >= expected.timestamp
-        && got.type_ == Type::Pong
-}
-
 type SendHandle = Vec<(thread::JoinHandle<Result<Instant, String>>, Packet)>;
 type ListenHandle = Vec<thread::JoinHandle<Result<(Duration, Packet), String>>>;
 
 fn listen_all(
     send_handles: SendHandle,
     socket: &UdpSocket,
-    url: &str,
+    client_url: SocketAddrV4,
     pkts: &[Packet],
 ) -> Result<ListenHandle, String> {
     let mut listen_handles = vec![];
@@ -75,15 +84,17 @@ fn listen_all(
         let ttl = (TIME_BETEEN_PINGS * (len - i) as u32) + EXTRA_TIME_TO_WAIT;
         let socket = socket.try_clone().map_err(|_| "Error cloning socket")?;
 
-        let url = url.to_string();
         let pkts = pkts.to_vec();
 
         // wait for the ping to be sent
-        let start = send_handle.join().map_err(|_| "Error joining thread??")?;
-        start.map_err(|_| "Error joining thread??")?;
+        let start = send_handle
+            .join()
+            .map_err(|_| "Error joining thread interna??")??;
 
         let listen_handle = thread::spawn(move || -> Result<(Duration, Packet), String> {
-            let start = Instant::now();
+            socket
+                .connect(client_url)
+                .map_err(|_| "Error connecting socket")?;
             let (pkt, received_bytes_count) = listen(&socket, ttl)?;
             let elapsed = start.elapsed();
 
@@ -97,7 +108,7 @@ fn listen_all(
             //     return Err("Received packet with different message".to_string());
             // }
 
-            if u32::from_le_bytes(pkt.timestamp) < u32::from_le_bytes(expected_pkt.timestamp) {
+            if u32::from_le_bytes(pkt.timestamp) > u32::from_le_bytes(expected_pkt.timestamp) {
                 return Err("Received packet with invalid timestamp".to_string());
             }
 
@@ -108,7 +119,7 @@ fn listen_all(
             println!(
                 "{} byte from {}: seq={} ttl={} time={:?}",
                 received_bytes_count,
-                url,
+                client_url,
                 seq_to_u64(&pkt.seq),
                 ttl.as_secs(),
                 elapsed
@@ -134,13 +145,15 @@ fn listen_all(
 pub fn analyze(
     pkts: &mut [Packet],
     socket: &UdpSocket,
-    url: impl AsRef<str>,
+    client_url: SocketAddrV4,
 ) -> Result<(), String> {
-    let url = url.as_ref().to_string();
     // create a thread for each ping and send the ping
     let mut send_handles = vec![];
     for (i, &mut pkt) in pkts.iter_mut().enumerate() {
         let socket = socket.try_clone().map_err(|_| "Error cloning socket")?;
+        socket
+            .connect(client_url)
+            .map_err(|_| "Error connecting socket")?;
         let fetch = thread::spawn(move || {
             thread::sleep(TIME_BETEEN_PINGS * (i + 1) as u32);
             fetch(pkt, &socket)
@@ -149,14 +162,15 @@ pub fn analyze(
     }
 
     // Analyse every pong asynchronously
-    let listen_handles = listen_all(send_handles, socket, &url, pkts)?;
+    let listen_handles = listen_all(send_handles, socket, client_url, pkts)?;
 
     let mut elapseds = vec![];
     let mut received_pkt = vec![];
     for handle in listen_handles {
-        let elapsed = handle
-            .join()
-            .map_err(|_| "Error joining thread: Received message that wasn't sent")?;
+        let elapsed = handle.join().map_err(|e| {
+            dbg!(e);
+            "Error joining thread: Could not listen to message"
+        })?;
         match elapsed {
             Ok((elapsed, pkt)) => {
                 elapseds.push(elapsed);
@@ -171,10 +185,10 @@ pub fn analyze(
     // print stats
     let receiveds = elapseds.len();
     #[allow(clippy::cast_precision_loss)]
-    let packet_loss = receiveds as f64 / f64::from(MAX_PINGS);
+    let packet_loss = (1.0 - (receiveds as f64 / pkts.len() as f64)) * 100.0;
     print!(
         "--- {} UDP ping statistics ---\n{} packets transmitted, {} packets received, {:.2}% packet loss",
-        url,
+        client_url,
         MAX_PINGS,
         receiveds,
         packet_loss
