@@ -17,8 +17,8 @@ use crate::packet::PKT_SIZE;
 
 const HOST_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const HOST_PORT: u16 = 30001;
-// const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
-const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::new(168, 227, 188, 22);
+const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
+// const CLIENT_ADDR: Ipv4Addr = Ipv4Addr::new(168, 227, 188, 22);
 const CLIENT_PORT: u16 = 30000;
 
 const TIME_BETEEN_PINGS: Duration = Duration::from_millis(500);
